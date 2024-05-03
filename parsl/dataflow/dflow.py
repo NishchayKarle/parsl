@@ -1184,7 +1184,7 @@ class DataFlowKernel:
             executor.hub_address = self.hub_address
             executor.hub_zmq_port = self.hub_zmq_port
             if self.monitoring:
-                executor.monitoring_radio = self.monitoring.radio
+                executor.submit_monitoring_radio = self.monitoring.radio
             if hasattr(executor, 'provider'):
                 if hasattr(executor.provider, 'script_dir'):
                     executor.provider.script_dir = os.path.join(self.run_dir, 'submit_scripts')
