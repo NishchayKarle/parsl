@@ -835,7 +835,9 @@ def start_file_logger(filename, rank, name='parsl', level=logging.DEBUG, format_
 
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
-    handler = logging.FileHandler(filename)
+    # handler = logging.FileHandler(filename)
+    from parsl.chronolog_handler import ChronologHandler
+    handler = ChronologHandler("ofi+sockets", "127.0.0.1", 5555, 55)
     handler.setLevel(level)
     formatter = logging.Formatter(format_string, datefmt='%Y-%m-%d %H:%M:%S')
     handler.setFormatter(formatter)
