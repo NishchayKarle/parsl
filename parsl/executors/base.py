@@ -74,7 +74,9 @@ class ParslExecutor(metaclass=ABCMeta):
         # eg. in workers - to send results back, and they should end up encapsulated
         # inside a RadioConfig.
         self.submit_monitoring_radio = submit_monitoring_radio
-        self.remote_monitoring_radio_config: RadioConfig = UDPRadio()
+        # self.remote_monitoring_radio_config: RadioConfig = UDPRadio()
+        from parsl.monitoring.radios.chronolog import ChronologRadio
+        self.remote_monitoring_radio_config: RadioConfig = ChronologRadio()
 
         self.run_dir = os.path.abspath(run_dir)
         self.run_id = run_id

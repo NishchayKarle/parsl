@@ -121,6 +121,7 @@ class UDPRadioSender(MonitoringRadioSender):
         Returns:
             None
         """
+        print("msg", message)
         try:
             buffer = pickle.dumps(message)
         except Exception:

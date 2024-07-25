@@ -36,6 +36,7 @@ class ChronologRadio(RadioConfig):
         self.chronicle_flags = flags
 
     def create_sender(self, *, source_id: int) -> MonitoringRadioSender:
+        logger.info("Creating chronolog sender")
         assert (
             self.client is not None
         ), "Chronolog client should be initialized by create_receiver"
@@ -51,7 +52,7 @@ class ChronologRadio(RadioConfig):
         )
 
     def create_receiver(self, ip: str, resource_msgs: Queue) -> Any:
-        self.ip = ip
+        self.ip = "127.0.0.1"
 
         if self.services is None:
             self.services = "ofi+sockets"
@@ -66,10 +67,11 @@ class ChronologRadio(RadioConfig):
             self.services, self.ip, self.port, self.provider_id
         )
         self.client = py_chronolog_client.Client(client_config)
+        logger.info("Connected to chronolog client")
         assert self.client.Connect() == 0, "Chronolog client failed to connect"
 
         if self.chronicle is None:
-            self.chronicle = f"nk_chronicle_{time.time()}"
+            self.chronicle = f"nk_monitoring_chronicle_{time.time()}"
 
         if self.chronicle_attrs is None:
             self.chronicle_attrs = {}
@@ -85,6 +87,7 @@ class ChronologRadio(RadioConfig):
             )
             == 0
         ), "Chronicle creation failed"
+        logger.info("chronolog chronicle created")
 
         return ChronologRadioReceiver(self.client, self.chronicle)
 
@@ -101,14 +104,17 @@ class ChronologRadioSender(MonitoringRadioSender):
     ) -> None:
         self.client = client
 
-        self.story = f"nk_story_{time.time()}"
+        self.story = f"nk_monitoring_story_{time.time()}"
         self.story_handle, err = self.client.AcquireStory(
             chronicle, self.story, chronicle_attrs, chronicle_flags
         )
         assert err == 0, f"Failed to acquire story: {err}"
+        logger.info("Created chronolog sender")
 
     def send(self, message: object) -> None:
-        self.story_handle.log_event(f"nk_message_{pickle.dumps(message)}")
+        logger.info(f"logging chronolog msg: {message}")
+        ret = self.story_handle.log_event(f"nk_monitoring_message_{pickle.dumps(message)}")
+        assert ret == 0, "logging event failed"
 
     def __del__(self):
         self.client.ReleaseStory(self.chronicle, self.story)
