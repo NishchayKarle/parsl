@@ -10,7 +10,7 @@ from parsl.executors.high_throughput.executor import (
 )
 from parsl.executors.status_handling import BlockProviderExecutor
 from parsl.jobs.states import JobStatus
-from parsl.monitoring.radios import RadioConfig
+from parsl.monitoring.radios.base import RadioConfig
 from parsl.providers import LocalProvider
 from parsl.providers.base import ExecutionProvider
 

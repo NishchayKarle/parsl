@@ -7,7 +7,7 @@ from multiprocessing import Event
 from typing import Any, Callable, Dict, List, Sequence, Tuple
 
 from parsl.monitoring.message_type import MessageType
-from parsl.monitoring.radios import MonitoringRadioSender, RadioConfig
+from parsl.monitoring.radios.base import MonitoringRadioSender, RadioConfig
 from parsl.multiprocessing import ForkProcess
 from parsl.process_loggers import wrap_with_logs
 

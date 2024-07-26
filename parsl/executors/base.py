@@ -6,12 +6,12 @@ from typing import Any, Callable, Dict, Optional
 
 from typing_extensions import Literal, Self
 
-from parsl.monitoring.radios import (
+from parsl.monitoring.radios.base import (
     MonitoringRadioReceiver,
     MonitoringRadioSender,
     RadioConfig,
-    UDPRadio,
 )
+from parsl.monitoring.radios.udp import UDPRadio
 
 logger = logging.getLogger(__name__)
 

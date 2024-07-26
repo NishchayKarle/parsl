@@ -340,3 +340,4 @@ class ZMQRadioSender(MonitoringRadioSender):
 
     def send(self, message: object) -> None:
         self._hub_channel.send_pyobj(message)
+

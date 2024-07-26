@@ -116,7 +116,7 @@ class DataFlowKernel:
         if self.monitoring:
             if self.monitoring.logdir is None:
                 self.monitoring.logdir = self.run_dir
-            self.monitoring.start(self.run_id, self.run_dir, self.config.run_dir)
+            self.monitoring.start(self.run_dir, self.config.run_dir)
 
         self.time_began = datetime.datetime.now()
         self.time_completed: Optional[datetime.datetime] = None
@@ -745,11 +745,6 @@ class DataFlowKernel:
         if self.monitoring is not None and self.monitoring.resource_monitoring_enabled:
             wrapper_logging_level = logging.DEBUG if self.monitoring.monitoring_debug else logging.INFO
 
-            # this is only for UDP... it should be some kind of config-specific initialisation
-            # which could also start threads, and this should be one-shot
-            # executor.monitoring_radio.ip = self.monitoring.hub_address  # type: ignore[attr-defined]
-            # executor.monitoring_radio.port = self.monitoring.udp_port  # type: ignore[attr-defined]
-
             (function, args, kwargs) = monitor_wrapper(f=function,
                                                        args=args,
                                                        kwargs=kwargs,
@@ -1289,6 +1284,23 @@ class DataFlowKernel:
             logger.info(f"Shutting down executor {executor.label}")
             executor.shutdown()
             logger.info(f"Shut down executor {executor.label}")
+
+            if hasattr(executor, 'provider'):
+                if hasattr(executor.provider, 'script_dir'):
+                    logger.info(f"Closing channel(s) for {executor.label}")
+
+                    if hasattr(executor.provider, 'channels'):
+                        for channel in executor.provider.channels:
+                            logger.info(f"Closing channel {channel}")
+                            channel.close()
+                            logger.info(f"Closed channel {channel}")
+                    else:
+                        assert hasattr(executor.provider, 'channel'), "If provider has no .channels, it must have .channel"
+                        logger.info(f"Closing channel {executor.provider.channel}")
+                        executor.provider.channel.close()
+                        logger.info(f"Closed channel {executor.provider.channel}")
+
+                    logger.info(f"Closed executor channel(s) for {executor.label}")
 
         logger.info("Terminated executors")
         self.time_completed = datetime.datetime.now()

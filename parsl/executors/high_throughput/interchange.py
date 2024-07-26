@@ -20,7 +20,7 @@ from parsl.app.errors import RemoteExceptionWrapper
 from parsl.executors.high_throughput.errors import ManagerLost, VersionMismatch
 from parsl.executors.high_throughput.manager_record import ManagerRecord
 from parsl.monitoring.message_type import MessageType
-from parsl.monitoring.radios import MonitoringRadioSender, ZMQRadioSender
+from parsl.monitoring.radios.base import MonitoringRadioSender, ZMQRadioSender
 from parsl.process_loggers import wrap_with_logs
 from parsl.serialize import serialize as serialize_object
 from parsl.utils import setproctitle
@@ -54,6 +54,7 @@ class Interchange:
                  logging_level: int,
                  poll_period: int,
                  cert_dir: Optional[str],
+                 run_id: str,
                  ) -> None:
         """
         Parameters
@@ -123,6 +124,8 @@ class Interchange:
         self.command_channel = self.zmq_context.socket(zmq.REP)
         self.command_channel.connect("tcp://{}:{}".format(client_address, client_ports[2]))
         logger.info("Connected to client")
+
+        self.run_id = run_id
 
         self.hub_address = hub_address
         self.hub_zmq_port = hub_zmq_port
@@ -224,6 +227,7 @@ class Interchange:
             d: Dict = cast(Dict, manager.copy())
             d['timestamp'] = datetime.datetime.now()
             d['last_heartbeat'] = datetime.datetime.fromtimestamp(d['last_heartbeat'])
+            d['run_id'] = self.run_id
 
             monitoring_radio.send((MessageType.NODE_INFO, d))
 

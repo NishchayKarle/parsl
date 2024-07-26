@@ -26,7 +26,7 @@ from parsl.executors.high_throughput.mpi_prefix_composer import (
 )
 from parsl.executors.status_handling import BlockProviderExecutor
 from parsl.jobs.states import TERMINAL_STATES, JobState, JobStatus
-from parsl.monitoring.radios import HTEXRadio, RadioConfig
+from parsl.monitoring.radios.base import HTEXRadio, RadioConfig
 from parsl.process_loggers import wrap_with_logs
 from parsl.providers import LocalProvider
 from parsl.providers.base import ExecutionProvider
@@ -169,7 +169,8 @@ class HighThroughputExecutor(BlockProviderExecutor, RepresentationMixin, UsageIn
                  |      |         |             | batching      |    |         |
            Parsl<---Fut-|         |             | load-balancing|  result   exception
                      ^  |         |             | watchdogs     |    |         |
-                     |  |         |   Q_mngmnt  |               |    V         V
+                     |  |         |    Result   |               |    |         |
+                     |  |         |    Queue    |               |    V         V
                      |  |         |    Thread<--|-incoming_q<---|--- +---------+
                      |  |         |      |      |               |
                      |  |         |      |      |               |
@@ -345,6 +346,10 @@ class HighThroughputExecutor(BlockProviderExecutor, RepresentationMixin, UsageIn
             launch_cmd = DEFAULT_LAUNCH_CMD
         self.launch_cmd = launch_cmd
 
+        if not interchange_launch_cmd:
+            interchange_launch_cmd = DEFAULT_INTERCHANGE_LAUNCH_CMD
+        self.interchange_launch_cmd = interchange_launch_cmd
+
     def _warn_deprecated(self, old: str, new: str):
         warnings.warn(
             f"{old} is deprecated and will be removed in a future release. "
@@ -432,20 +437,19 @@ class HighThroughputExecutor(BlockProviderExecutor, RepresentationMixin, UsageIn
             "127.0.0.1", self.interchange_port_range, self.cert_dir
         )
 
-        self._queue_management_thread = None
-        self._start_queue_management_thread()
+        self._result_queue_thread = None
+        self._start_result_queue_thread()
         self._start_local_interchange_process()
 
-        logger.debug("Created management thread: {}".format(self._queue_management_thread))
+        logger.debug("Created result queue thread: %s", self._result_queue_thread)
 
         self.initialize_scaling()
 
     @wrap_with_logs
-    def _queue_management_worker(self):
-        """Listen to the queue for task status messages and handle them.
+    def _result_queue_worker(self):
+        """Listen to the queue for task result messages and handle them.
 
-        Depending on the message, tasks will be updated with results, exceptions,
-        or updates. It expects the following messages:
+        Depending on the message, tasks will be updated with results or exceptions.
 
         .. code:: python
 
@@ -462,7 +466,7 @@ class HighThroughputExecutor(BlockProviderExecutor, RepresentationMixin, UsageIn
 
         The `None` message is a die request.
         """
-        logger.debug("Queue management worker starting")
+        logger.debug("Result queue worker starting")
 
         while not self.bad_state_is_set:
             try:
@@ -531,7 +535,7 @@ class HighThroughputExecutor(BlockProviderExecutor, RepresentationMixin, UsageIn
                         else:
                             raise BadMessage("Message received with unknown type {}".format(msg['type']))
 
-        logger.info("Queue management worker finished")
+        logger.info("Result queue worker finished")
 
     def _start_local_interchange_process(self) -> None:
         """ Starts the interchange process locally
@@ -554,6 +558,7 @@ class HighThroughputExecutor(BlockProviderExecutor, RepresentationMixin, UsageIn
                               "poll_period": self.poll_period,
                               "logging_level": logging.DEBUG if self.worker_debug else logging.INFO,
                               "cert_dir": self.cert_dir,
+                              "run_id": self.run_id,
                               }
 
         config_pickle = pickle.dumps(interchange_config)
@@ -574,21 +579,21 @@ class HighThroughputExecutor(BlockProviderExecutor, RepresentationMixin, UsageIn
             raise Exception("Interchange failed to start")
         logger.debug("Got worker ports")
 
-    def _start_queue_management_thread(self):
-        """Method to start the management thread as a daemon.
+    def _start_result_queue_thread(self):
+        """Method to start the result queue thread as a daemon.
 
         Checks if a thread already exists, then starts it.
-        Could be used later as a restart if the management thread dies.
+        Could be used later as a restart if the result queue thread dies.
         """
-        if self._queue_management_thread is None:
-            logger.debug("Starting queue management thread")
-            self._queue_management_thread = threading.Thread(target=self._queue_management_worker, name="HTEX-Queue-Management-Thread")
-            self._queue_management_thread.daemon = True
-            self._queue_management_thread.start()
-            logger.debug("Started queue management thread")
+        if self._result_queue_thread is None:
+            logger.debug("Starting result queue thread")
+            self._result_queue_thread = threading.Thread(target=self._result_queue_worker, name="HTEX-Result-Queue-Thread")
+            self._result_queue_thread.daemon = True
+            self._result_queue_thread.start()
+            logger.debug("Started result queue thread")
 
         else:
-            logger.error("Management thread already exists, returning")
+            logger.error("Result queue thread already exists, returning")
 
     def hold_worker(self, worker_id: str) -> None:
         """Puts a worker on hold, preventing scheduling of additional tasks to it.
@@ -836,6 +841,23 @@ class HighThroughputExecutor(BlockProviderExecutor, RepresentationMixin, UsageIn
         except subprocess.TimeoutExpired:
             logger.info("Unable to terminate Interchange process; sending SIGKILL")
             self.interchange_proc.kill()
+
+        logger.info("Closing ZMQ pipes")
+
+        # These pipes are used in a thread unsafe manner. If you have traced a
+        # problem to this block of code, you might consider what is happening
+        # with other threads that access these.
+
+        # incoming_q is not closed here because it is used by the results queue
+        # worker which is not shut down at this point.
+
+        if hasattr(self, 'outgoing_q'):
+            logger.info("Closing outgoing_q")
+            self.outgoing_q.close()
+
+        if hasattr(self, 'command_client'):
+            logger.info("Closing command client")
+            self.command_client.close()
 
         # TODO: implement this across all executors
         super().shutdown()
