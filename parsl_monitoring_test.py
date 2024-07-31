@@ -50,3 +50,5 @@ if __name__ == "__main__":
     for fut in res:
         print(fut.result(), end=",")
     print()
+
+    parsl.dfk().cleanup()

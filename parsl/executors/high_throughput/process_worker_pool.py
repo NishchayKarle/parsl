@@ -849,7 +849,7 @@ def start_file_logger(filename, rank, name='parsl', level=logging.DEBUG, format_
     handler.setLevel(level)
     formatter = logging.Formatter(format_string, datefmt='%Y-%m-%d %H:%M:%S')
     handler.setFormatter(formatter)
-    logger2.addHandler(handler)
+    logger.addHandler(handler)
     return logger
 
 
