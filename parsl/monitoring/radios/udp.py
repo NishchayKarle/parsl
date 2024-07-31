@@ -121,6 +121,7 @@ class UDPRadioSender(MonitoringRadioSender):
         Returns:
             None
         """
+        logger.info("Starting UDP radio message send")
         try:
             buffer = pickle.dumps(message)
         except Exception:
@@ -132,6 +133,7 @@ class UDPRadioSender(MonitoringRadioSender):
         except socket.timeout:
             logging.error("Could not send message within timeout limit")
             return
+        logger.info("Normal ending for UDP radio message send")
         return
 
 

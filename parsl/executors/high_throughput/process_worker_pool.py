@@ -184,6 +184,7 @@ class Manager:
 
         self.uid = uid
         self.block_id = block_id
+        self.start_time = time.time()
 
         self.enable_mpi_mode = enable_mpi_mode
         self.mpi_launcher = mpi_launcher
@@ -263,6 +264,7 @@ class Manager:
                'worker_count': self.worker_count,
                'uid': self.uid,
                'block_id': self.block_id,
+               'start_time': self.start_time,
                'prefetch_capacity': self.prefetch_capacity,
                'max_capacity': self.worker_count + self.prefetch_capacity,
                'os': platform.system(),
@@ -661,7 +663,6 @@ def worker(
     global logger
     logger = start_file_logger('{}/block-{}/{}/worker_{}.log'.format(logdir, block_id, pool_id, worker_id),
                                worker_id,
-                               name="worker_log",
                                level=logging.DEBUG if debug else logging.INFO)
 
     # Store worker ID as an environment variable
@@ -834,7 +835,15 @@ def start_file_logger(filename, rank, name='parsl', level=logging.DEBUG, format_
                         "[%(levelname)s]  %(message)s"
 
     logger = logging.getLogger(name)
-    logger2 = logging.getLogger("")
+
+    # remove handlers from named context - this is only going to help when
+    # the parent process attached to exactly the same logger name...
+    # so it should always be 'parsl'. ugh. this is a horrific artefact
+    # of using fork-without-exec...
+
+    for h in logger.handlers:
+        logger.removeHandler(h)
+
     logger.setLevel(logging.DEBUG)
     handler = logging.FileHandler(filename)
     handler.setLevel(level)
