@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import logging
 import os
-import queue
 import threading
 import time
+from multiprocessing.queues import Queue
 from multiprocessing.synchronize import Event
 from typing import Tuple, Union
 
+import typeguard
 import zmq
 
 from parsl.log_utils import set_file_logger
-from parsl.monitoring.message_type import MessageType
 from parsl.monitoring.types import AddressedMonitoringMessage, TaggedMonitoringMessage
 from parsl.process_loggers import wrap_with_logs
 from parsl.utils import setproctitle
@@ -28,13 +28,9 @@ class MonitoringRouter:
 
                  monitoring_hub_address: str = "127.0.0.1",
                  logdir: str = ".",
-                 run_id: str,
                  logging_level: int = logging.INFO,
                  atexit_timeout: int = 3,   # in seconds
-                 priority_msgs: "queue.Queue[AddressedMonitoringMessage]",
-                 node_msgs: "queue.Queue[AddressedMonitoringMessage]",
-                 block_msgs: "queue.Queue[AddressedMonitoringMessage]",
-                 resource_msgs: "queue.Queue[AddressedMonitoringMessage]",
+                 resource_msgs: "Queue[AddressedMonitoringMessage]",
                  exit_event: Event,
                  ):
         """ Initializes a monitoring configuration class.
@@ -52,8 +48,11 @@ class MonitoringRouter:
              Logging level as defined in the logging module. Default: logging.INFO
         atexit_timeout : float, optional
             The amount of time in seconds to terminate the hub without receiving any messages, after the last dfk workflow message is received.
+        XXX TODO not-so-many-left-now... *_msgs : Queue
+            Four multiprocessing queues to receive messages, routed by type tag, and sometimes modified according to type tag.
 
-        TODO: documentation of new parameters
+        exit_event : Event
+            An event that the main Parsl process will set to signal that the monitoring router should shut down.
         """
         os.makedirs(logdir, exist_ok=True)
         self.logger = set_file_logger("{}/monitoring_router.log".format(logdir),
@@ -63,7 +62,6 @@ class MonitoringRouter:
 
         self.hub_address = hub_address
         self.atexit_timeout = atexit_timeout
-        self.run_id = run_id
 
         self.loop_freq = 10.0  # milliseconds
 
@@ -77,9 +75,6 @@ class MonitoringRouter:
                                                                                min_port=zmq_port_range[0],
                                                                                max_port=zmq_port_range[1])
 
-        self.priority_msgs = priority_msgs
-        self.node_msgs = node_msgs
-        self.block_msgs = block_msgs
         self.resource_msgs = resource_msgs
         self.exit_event = exit_event
 
@@ -115,25 +110,7 @@ class MonitoringRouter:
                         msg_0: AddressedMonitoringMessage
                         msg_0 = (msg, 0)
 
-                        if msg[0] == MessageType.NODE_INFO:
-                            msg[1]['run_id'] = self.run_id
-                            self.node_msgs.put(msg_0)
-                        elif msg[0] == MessageType.RESOURCE_INFO:
-                            self.resource_msgs.put(msg_0)
-                        elif msg[0] == MessageType.BLOCK_INFO:
-                            self.block_msgs.put(msg_0)
-                        elif msg[0] == MessageType.TASK_INFO:
-                            self.priority_msgs.put(msg_0)
-                        elif msg[0] == MessageType.WORKFLOW_INFO:
-                            self.priority_msgs.put(msg_0)
-                        else:
-                            # There is a type: ignore here because if msg[0]
-                            # is of the correct type, this code is unreachable,
-                            # but there is no verification that the message
-                            # received from zmq_receiver_channel.recv_pyobj() is actually
-                            # of that type.
-                            self.logger.error("Discarding message "  # type: ignore[unreachable]
-                                              f"from interchange with unknown type {msg[0].value}")
+                        self.resource_msgs.put(msg_0)
                 except zmq.Again:
                     pass
                 except Exception:
@@ -149,30 +126,24 @@ class MonitoringRouter:
 
 
 @wrap_with_logs
-def router_starter(comm_q: "queue.Queue[Union[int, str]]",
-                   exception_q: "queue.Queue[Tuple[str, str]]",
-                   priority_msgs: "queue.Queue[AddressedMonitoringMessage]",
-                   node_msgs: "queue.Queue[AddressedMonitoringMessage]",
-                   block_msgs: "queue.Queue[AddressedMonitoringMessage]",
-                   resource_msgs: "queue.Queue[AddressedMonitoringMessage]",
+@typeguard.typechecked
+def router_starter(*,
+                   comm_q: "Queue[Union[int, str]]",
+                   exception_q: "Queue[Tuple[str, str]]",
+                   resource_msgs: "Queue[AddressedMonitoringMessage]",
                    exit_event: Event,
 
                    hub_address: str,
                    zmq_port_range: Tuple[int, int],
 
                    logdir: str,
-                   logging_level: int,
-                   run_id: str) -> None:
+                   logging_level: int) -> None:
     setproctitle("parsl: monitoring router")
     try:
         router = MonitoringRouter(hub_address=hub_address,
                                   zmq_port_range=zmq_port_range,
                                   logdir=logdir,
                                   logging_level=logging_level,
-                                  run_id=run_id,
-                                  priority_msgs=priority_msgs,
-                                  node_msgs=node_msgs,
-                                  block_msgs=block_msgs,
                                   resource_msgs=resource_msgs,
                                   exit_event=exit_event)
     except Exception as e:
