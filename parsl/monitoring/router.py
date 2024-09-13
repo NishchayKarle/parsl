@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing.queues as mpq
 import os
 import threading
 import time
 from multiprocessing.queues import Queue
 from multiprocessing.synchronize import Event
-from typing import Tuple, Union
+from typing import Tuple
 
 import typeguard
 import zmq
@@ -30,7 +31,7 @@ class MonitoringRouter:
                  logdir: str = ".",
                  logging_level: int = logging.INFO,
                  atexit_timeout: int = 3,   # in seconds
-                 resource_msgs: "Queue[AddressedMonitoringMessage]",
+                 resource_msgs: mpq.Queue,
                  exit_event: Event,
                  ):
         """ Initializes a monitoring configuration class.
@@ -48,8 +49,8 @@ class MonitoringRouter:
              Logging level as defined in the logging module. Default: logging.INFO
         atexit_timeout : float, optional
             The amount of time in seconds to terminate the hub without receiving any messages, after the last dfk workflow message is received.
-        XXX TODO not-so-many-left-now... *_msgs : Queue
-            Four multiprocessing queues to receive messages, routed by type tag, and sometimes modified according to type tag.
+        resource_msgs : multiprocessing.Queue
+            A multiprocessing queue to receive messages to be routed onwards to the database process
 
         exit_event : Event
             An event that the main Parsl process will set to signal that the monitoring router should shut down.
@@ -81,12 +82,8 @@ class MonitoringRouter:
     @wrap_with_logs(target="monitoring_router")
     def start(self) -> None:
         self.logger.info("Starting ZMQ listener thread")
-        zmq_radio_receiver_thread = threading.Thread(target=self.start_zmq_listener)
+        zmq_radio_receiver_thread = threading.Thread(target=self.start_zmq_listener, daemon=True)
         zmq_radio_receiver_thread.start()
-
-        # exit when both of those have exiting
-        # TODO: this is to preserve the existing behaviour of start(), but it
-        # isn't necessarily the *right* thing to do...
 
         self.logger.info("Joining on ZMQ listener thread")
         zmq_radio_receiver_thread.join()
@@ -128,9 +125,9 @@ class MonitoringRouter:
 @wrap_with_logs
 @typeguard.typechecked
 def router_starter(*,
-                   comm_q: "Queue[Union[int, str]]",
-                   exception_q: "Queue[Tuple[str, str]]",
-                   resource_msgs: "Queue[AddressedMonitoringMessage]",
+                   comm_q: mpq.Queue,
+                   exception_q: mpq.Queue,
+                   resource_msgs: mpq.Queue,
                    exit_event: Event,
 
                    hub_address: str,
